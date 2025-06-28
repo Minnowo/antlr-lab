@@ -1,3 +1,7 @@
+antlr-images/
+work/
+logs/
+
 # Compiled class file
 *.class
 

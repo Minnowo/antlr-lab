@@ -1,0 +1,10 @@
+{
+  "name": "Example",
+  "lexer": "ExprLexer.g4",
+  "parser": "ExprParser.g4",
+  "start": "program",
+  "example": [
+      "test/simple.expr"
+  ]
+}
+

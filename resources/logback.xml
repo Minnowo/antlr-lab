@@ -1,5 +1,5 @@
 <configuration>
-    <property name="LOG_DIR" value="/var/log/antlrlab" />
+    <property name="LOG_DIR" value="./log/antlrlab" />
     <appender name="FILE" class="ch.qos.logback.core.rolling.RollingFileAppender">
         <file>${LOG_DIR}/antlrlab.log</file>
         <append>true</append>

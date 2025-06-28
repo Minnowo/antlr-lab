@@ -3,6 +3,7 @@ package org.antlr.v4.server;
 import com.google.gson.Gson;
 import com.google.gson.JsonElement;
 import com.google.gson.JsonObject;
+import com.google.gson.JsonArray;
 import com.google.gson.JsonParser;
 import jakarta.servlet.http.HttpServletRequest;
 import jakarta.servlet.http.HttpServletResponse;
@@ -30,7 +31,25 @@ import java.util.Optional;
 import static org.antlr.v4.server.GrammarProcessor.interp;
 
 public class ANTLRHttpServer {
-    public static final String IMAGES_DIR = "/tmp/antlr-images";
+    public static String IMAGES_DIR = "./antlr-images";
+    public static String WORK_DIR = "./work";
+
+    static {
+        String workPath = System.getenv("WORK_DIR");
+        if (workPath != null) {
+            File f =  new File(workPath);
+            if(f.exists() && f.isDirectory()) {
+                WORK_DIR = f.getAbsolutePath();
+            }
+        }
+        String imagesPath = System.getenv("IMAGES_DIR");
+        if (workPath != null) {
+            File f =  new File(workPath);
+            if(f.exists() && f.isDirectory()) {
+                IMAGES_DIR = f.getAbsolutePath();
+            }
+        }
+    }
 
     public static class ParseServlet extends DefaultServlet {
         static final ch.qos.logback.classic.Logger LOGGER = (ch.qos.logback.classic.Logger) LoggerFactory.getLogger(ANTLRHttpServer.class);
@@ -160,10 +179,157 @@ public class ANTLRHttpServer {
         }
     }
 
+    public static class GrammarFileServlet extends DefaultServlet {
+        static final ch.qos.logback.classic.Logger LOGGER = (ch.qos.logback.classic.Logger)LoggerFactory.getLogger(GrammarFileServlet.class);
+
+        @Override
+        protected void doGet(HttpServletRequest request, HttpServletResponse response) throws IOException {
+            String requestPath = request.getPathInfo(); // e.g., /my-grammar-name/parser.g4
+            LOGGER.info("Grammar file request: " + requestPath);
+            response.addHeader("Access-Control-Allow-Origin", "*");
+
+            if (requestPath == null || requestPath.equals("/")) {
+                response.sendError(HttpServletResponse.SC_BAD_REQUEST, "Missing grammar name or file");
+                return;
+            }
+
+            String[] parts = requestPath.split("/", 4);
+            if (parts.length < 3) {
+                response.sendError(HttpServletResponse.SC_BAD_REQUEST, "Invalid path. Expected /<name>/<file>");
+                return;
+            }
+
+            String grammarName = parts[1];   // e.g., my-grammar-name
+            String requestedFile = parts[2]; // e.g., parser, lexer, example
+
+            File grammarDir = new File(WORK_DIR, grammarName);
+            File configFile = new File(grammarDir, "antlr-lab.json");
+
+            if (!configFile.exists()) {
+                response.sendError(HttpServletResponse.SC_NOT_FOUND, "Missing antlr-lab.json for grammar: " + grammarName);
+                return;
+            }
+
+            try (Reader reader = Files.newBufferedReader(configFile.toPath())) {
+                JsonObject config = JsonParser.parseReader(reader).getAsJsonObject();
+
+                String actualFileName;
+
+                switch (requestedFile) {
+                    default:
+                        response.sendError(HttpServletResponse.SC_BAD_REQUEST, "Invalid path.");
+                        return;
+                    case "parser":
+                        actualFileName = config.get("parser").getAsString();
+                        break;
+                    case "lexer":
+                        actualFileName = config.get("lexer").getAsString();
+                        break;
+                    case "example":
+                        if (parts.length < 4) {
+                            response.sendError(HttpServletResponse.SC_BAD_REQUEST, "Invalid path. Expected /<name>/example/<file>");
+                            return;
+                        }
+                        String exampleFile = parts[3];
+                        JsonArray examples = config.has("example") ? config.get("example").getAsJsonArray() : new JsonArray();
+                        boolean allowed = false;
+                        for (JsonElement e : examples) {
+                            if (e.getAsString().equals(exampleFile)) {
+                                allowed = true;
+                                break;
+                            }
+                        }
+                        if (!allowed) {
+                            response.sendError(HttpServletResponse.SC_FORBIDDEN, "Requested file is not in 'example' list");
+                            return;
+                        }
+                        actualFileName = exampleFile;
+                        break;
+                }
+
+                File actualFile = new File(grammarDir, actualFileName);
+                if (!actualFile.exists()) {
+                    response.sendError(HttpServletResponse.SC_NOT_FOUND, "File not found: " + actualFileName);
+                    return;
+                }
+
+                // Set content type
+                if (actualFileName.endsWith(".g4")) {
+                    response.setContentType("text/plain");
+                } else {
+                    response.setContentType(Files.probeContentType(actualFile.toPath()));
+                }
+
+                response.setStatus(HttpServletResponse.SC_OK);
+                Files.copy(actualFile.toPath(), response.getOutputStream());
+
+            } catch (Exception e) {
+                LOGGER.error("Error serving grammar file", e);
+                response.setStatus(HttpServletResponse.SC_INTERNAL_SERVER_ERROR);
+                try (PrintWriter out = response.getWriter()) {
+                    e.printStackTrace(out);
+                }
+            }
+        }
+    }
+
+
+    public static class ListGrammarsServlet extends DefaultServlet {
+
+        static final ch.qos.logback.classic.Logger LOGGER = (ch.qos.logback.classic.Logger) LoggerFactory.getLogger(ListGrammarsServlet.class);
+
+        @Override
+        protected void doGet(HttpServletRequest request, HttpServletResponse response) throws IOException {
+            response.setContentType("application/json;charset=utf-8");
+            response.addHeader("Access-Control-Allow-Origin", "*");
+
+            JsonArray grammars = new JsonArray();
+            File[] dirs = new File(WORK_DIR).listFiles(File::isDirectory);
+            if (dirs != null) {
+
+                for (File dir : dirs) {
+                    File configFile = new File(dir, "antlr-lab.json");
+                    if (!configFile.exists()) {
+                        LOGGER.warn("No antlr-lab.json in: " + dir.getAbsolutePath());
+                        continue;
+                    }
+
+                    try (Reader reader = Files.newBufferedReader(configFile.toPath())) {
+                        JsonObject config = JsonParser.parseReader(reader).getAsJsonObject();
+
+                        String name = config.get("name").getAsString();
+                        String lexer = config.get("lexer").getAsString();
+                        String parser = config.get("parser").getAsString();
+                        String start = config.has("start") ? config.get("start").getAsString() : "prog";
+
+                        JsonArray examples = config.has("example") ? config.get("example").getAsJsonArray() : new JsonArray();
+
+                        JsonObject grammar = new JsonObject();
+                        grammar.addProperty("name", name);
+                        grammar.addProperty("path", dir.getName());
+                        grammar.addProperty("lexer", "/grammar/" + dir.getName() + "/lexer");
+                        grammar.addProperty("parser", "/grammar/" + dir.getName() + "/parser");
+                        grammar.addProperty("start", start);
+                        grammar.add("example", examples);
+
+                        grammars.add(grammar);
+                    } catch (Exception e) {
+                        LOGGER.error("Failed to parse config in: " + dir.getAbsolutePath(), e);
+                    }
+                }
+            }
+
+            PrintWriter out = response.getWriter();
+            out.write(new Gson().toJson(grammars));
+            out.flush();
+        }
+    }
+
+
     public static void main(String[] args) throws Exception {
         new File(IMAGES_DIR).mkdirs();
 
-        Files.createDirectories(Path.of("/var/log/antlrlab"));
+        Files.createDirectories(Path.of("./log/antlrlab"));
         QueuedThreadPool threadPool = new QueuedThreadPool();
         threadPool.setMaxThreads(5);
         threadPool.setName("server");
@@ -171,7 +337,7 @@ public class ANTLRHttpServer {
         Server server = new Server(threadPool);
 
         ServerConnector http = new ServerConnector(server);
-        http.setPort(80);
+        http.setPort(8000);
 
         server.addConnector(http);
 
@@ -179,6 +345,9 @@ public class ANTLRHttpServer {
         context.setContextPath("/");
         context.addServlet(new ServletHolder(new ParseServlet()), "/parse/*");
         context.addServlet(new ServletHolder(new ShareServlet()), "/share/*");
+        context.addServlet(new ServletHolder(new ListGrammarsServlet()), "/grammars");
+        context.addServlet(new ServletHolder(new GrammarFileServlet()), "/grammar/*");
+
 
         ServletHolder holderHome = new ServletHolder("static-home", DefaultServlet.class);
         holderHome.setInitParameter("resourceBase", "static");

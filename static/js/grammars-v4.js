@@ -1,6 +1,8 @@
 "use strict";
 
-let GRAMMAR_INDEX = "https://raw.githubusercontent.com/antlr/grammars-v4/master/grammars.json"
+// let GRAMMAR_INDEX = "https://raw.githubusercontent.com/antlr/grammars-v4/master/grammars.json"
+let GRAMMAR_INDEX = "/grammars"
+let EXAMPLE_FILE_ROOT = "/grammar";
 
 async function selectGrammar() {
     // Find.
@@ -29,13 +31,7 @@ async function selectGrammar() {
             $("#parsertab").addClass("tabs-header-selected");
             $("#lexertab").removeClass("tabs-header-selected");
         });
-        let prefix = "https://raw.githubusercontent.com/antlr/grammars-v4/master/";
-        let trunc = found.parser.substring(prefix.length);
-        // remove parser grammar file name, assume that it's
-        // the root (which is wrong!).
-        let last = trunc.lastIndexOf("/");
-        let x = trunc.substring(0, last);
-        let fname = prefix + x + "/examples/" + found.example[0];
+        let fname = EXAMPLE_FILE_ROOT + "/" + found.path + "/example/" + found.example[0];
         await axios.get(fname).then(function (response) {
             $("#input").data("session").setValue(response.data);
         });
@@ -79,13 +75,7 @@ async function selectInput() {
         if (option.selected) {
             // Set input.
             let x = option.value;
-            let prefix = "https://raw.githubusercontent.com/antlr/grammars-v4/master/";
-            let trunc = found_grammar.parser.substring(prefix.length);
-            // remove parser grammar file name, assume that it's
-            // the root (which is wrong!).
-            let last = trunc.lastIndexOf("/");
-            let y = trunc.substring(0, last);
-            let url = prefix + y + "/examples/" + x;
+            let url = EXAMPLE_FILE_ROOT + "/" + found_grammar.path + "/example/" + x;
             await axios.get(url).then(function (response) {
                 $("#input").data("session").setValue(response.data);
             });

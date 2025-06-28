@@ -1,6 +1,8 @@
 .main-layout {
     display: flex;
+    flex-direction: column;
     height: 100%;
+    margin-bottom: 200px;
 }
 
 .intro {
@@ -24,7 +26,6 @@
     font-size: 12px;
     color: #404040;
     padding: 3px;
-    white-space: pre-wrap;
     overflow: auto;
 }
 
