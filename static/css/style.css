@@ -1,8 +1,7 @@
 .main-layout {
     display: flex;
     flex-direction: column;
-    height: 100%;
-    margin-bottom: 200px;
+    margin-bottom: 300px;
 }
 
 .intro {
